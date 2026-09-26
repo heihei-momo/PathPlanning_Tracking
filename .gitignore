@@ -1,0 +1,69 @@
+# ===== Python =====
+# 字节码 / 缓存
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# 打包 / 分发
+build/
+dist/
+eggs/
+*.egg-info/
+*.egg
+.eggs/
+
+# 虚拟环境
+.venv/
+venv/
+env/
+ENV/
+.python-version
+
+# 测试 / 覆盖率
+.pytest_cache/
+.cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+coverage.xml
+*.cover
+
+# 类型检查 / 代码检查缓存
+.mypy_cache/
+.dmypy.json
+.ruff_cache/
+.pytype/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# 日志 / 临时文件
+*.log
+*.tmp
+*.bak
+*~
+.DS_Store
+Thumbs.db
+
+# ===== IDE / 编辑器 =====
+.idea/
+.vscode/
+*.iml
+*.swp
+*.swo
+.spyderproject
+.spyproject
+.ropeproject
+.project
+.pydevproject
+settings.json
+
+# ===== 本仓库特殊说明 =====
+# 注意：Sampling_based_Planning/gif/ 与 Search_based_Planning/gif/ 里的 *.gif
+# 是 README.md 中引用的演示图，需要保留，因此这里不忽略 *.gif。
+# 如果本地跑算法生成的图片/动画不想提交，可按需取消下面两行的注释：
+# /Sampling_based_Planning/gif/*.png
+# /Search_based_Planning/gif/*.png
