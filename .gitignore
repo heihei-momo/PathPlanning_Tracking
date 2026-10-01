@@ -61,6 +61,9 @@ Thumbs.db
 .pydevproject
 settings.json
 
+# 本地生成的演示截图（可随时删除）
+/demo_preview/
+
 # ===== 本仓库特殊说明 =====
 # 注意：Sampling_based_Planning/gif/ 与 Search_based_Planning/gif/ 里的 *.gif
 # 是 README.md 中引用的演示图，需要保留，因此这里不忽略 *.gif。

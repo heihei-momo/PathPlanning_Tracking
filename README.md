@@ -34,6 +34,30 @@ Directory Structure
         └── Batch Informed Trees (BIT*)
     └── Papers
 
+How to Run
+------
+Each algorithm is a standalone script: its `main()` runs the planner and pops up a Matplotlib window that animates the search process. Press `Esc` to close the window. Run every command from the project root.
+
+### Search-based Planning
+These scripts append `Search_based_Planning/` to `sys.path` themselves, so they can be executed directly by path:
+
+    python3 Search_based_Planning/Search_2D/Astar.py
+    python3 Search_based_Planning/Search_2D/Dijkstra.py
+    python3 Search_based_Planning/Search_2D/LRTAstar.py
+
+### Sampling-based Planning
+These scripts import with the absolute package name `Sampling_based_Planning.*`, so they must be launched as modules (`-m`) from the project root:
+
+    python3 -m Sampling_based_Planning.rrt_2D.rrt
+    python3 -m Sampling_based_Planning.rrt_2D.rrt_star
+    python3 -m Sampling_based_Planning.rrt_2D.rrt_connect
+
+Launching them by path instead fails with `ModuleNotFoundError: No module named 'Sampling_based_Planning'`. The equivalent alternative is to put the project root on `PYTHONPATH`:
+
+    PYTHONPATH=. python3 Sampling_based_Planning/rrt_2D/rrt.py
+
+The same two conventions apply to the 3D planners: `Search_based_Planning/Search_3D/` follows the first one and `Sampling_based_Planning/rrt_3D/` the second.
+
 ## Animations - Search-Based
 ### Best-First & Dijkstra
 <div align=right>
