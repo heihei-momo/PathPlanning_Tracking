@@ -248,11 +248,10 @@ def generate_local_course(L, lengths, mode, maxc, step_size):
 
 def planning_from_origin(gx, gy, gyaw, curv, step_size):
     D = math.hypot(gx, gy)
-    d = D * curv
-
-    theta = mod2pi(math.atan2(gy, gx))
-    alpha = mod2pi(-theta)
-    beta = mod2pi(gyaw - theta)
+    d = D * curv #归一化距离，把实际距离转换成单位圆坐标
+    theta = mod2pi(math.atan2(gy, gx))#是目标点的夹角
+    alpha = mod2pi(-theta)#起点航向和目标方向之间的夹角
+    beta = mod2pi(gyaw - theta) #gyaw目标点在起点坐标系下的车辆朝向，theta是起点坐标系中，起点指向目标点的位置方向角。得到目标车辆朝向，相对于“起点到目标位置连线方向”的偏差
 
     planners = [LSL, RSR, LSR, RSL, RLR, LRL]
 
@@ -268,13 +267,18 @@ def planning_from_origin(gx, gy, gyaw, curv, step_size):
         cost = (abs(t) + abs(p) + abs(q))
         if best_cost > cost:
             bt, bp, bq, best_mode = t, p, q, mode
-            best_cost = cost
+            best_cost = cost#比较哪种走法路径最短
     lengths = [bt, bp, bq]
 
     x_list, y_list, yaw_list, directions = generate_local_course(
-        sum(lengths), lengths, best_mode, curv, step_size)
+        sum(lengths), lengths, best_mode, curv, step_size)#将曲线采样成一个个离散的 (x,y,yaw) 轨迹点
 
     return x_list, y_list, yaw_list, best_mode, best_cost
+    # x_list	路径上每个离散点的 x 坐标
+    # y_list	路径上每个离散点的 y 坐标
+    # yaw_list	路径上每个离散点的 车辆朝向角
+    # best_mode	最终选择的路径类型，例如 ["L","S","L"]
+    # best_cost	这条路径的归一化总长度
 
 
 def calc_dubins_path(sx, sy, syaw, gx, gy, gyaw, curv, step_size=0.1):
@@ -282,8 +286,8 @@ def calc_dubins_path(sx, sy, syaw, gx, gy, gyaw, curv, step_size=0.1):
     gy = gy - sy
 
     l_rot = Rot.from_euler('z', syaw).as_matrix()[0:2, 0:2]
-    le_xy = np.stack([gx, gy]).T @ l_rot
-    le_yaw = gyaw - syaw
+    le_xy = np.stack([gx, gy]).T @ l_rot #计算终点在起点坐标系的位置
+    le_yaw = gyaw - syaw # 把起点车辆朝向作为x轴，转换目标点的航向角到起点坐标系下
 
     lp_x, lp_y, lp_yaw, mode, lengths = planning_from_origin(
         le_xy[0], le_xy[1], le_yaw, curv, step_size)

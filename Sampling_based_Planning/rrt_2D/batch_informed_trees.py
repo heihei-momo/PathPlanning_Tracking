@@ -107,7 +107,7 @@ class BITStar:
 
             if self.g_T[vm] + self.calc_dist(vm, xm) + self.h_estimated(xm) < self.g_T[self.x_goal]:  # 有望
                 actual_cost = self.cost(vm, xm)  # 边的真实代价
-                if self.g_estimated(vm) + actual_cost + self.h_estimated(xm) < self.g_T[self.x_goal]:  # 有望
+                if self.g_T[vm] + actual_cost + self.h_estimated(xm) < self.g_T[self.x_goal]:  # 有望
                     if self.g_T[vm] + actual_cost < self.g_T[xm]:  # 可降低 xm 的代价
                         if xm in self.Tree.V:  # xm 已在树中
                             # remove edges
@@ -162,8 +162,8 @@ class BITStar:
         self.Tree.V = {v for v in self.Tree.V if self.f_estimated(v) <= cBest}  # 剔除无望顶点
         self.Tree.E = {(v, w) for v, w in self.Tree.E
                        if self.f_estimated(v) <= cBest and self.f_estimated(w) <= cBest}  # 剔除无望边
-        self.X_sample.update({v for v in self.Tree.V if self.g_T[v] == np.inf})  # 未连接顶点退回采样集
-        self.Tree.V = {v for v in self.Tree.V if self.g_T[v] < np.inf}  # 树只留已连接顶点
+        # self.X_sample.update({v for v in self.Tree.V if self.g_T[v] == np.inf})  # 未连接顶点退回采样集
+        # self.Tree.V = {v for v in self.Tree.V if self.g_T[v] < np.inf}  # 树只留已连接顶点
 
     def cost(self, start, end):
         if self.utils.is_collision(start, end):  # 边与障碍相交
