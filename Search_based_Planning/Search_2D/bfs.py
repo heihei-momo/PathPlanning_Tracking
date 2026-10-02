@@ -48,7 +48,7 @@ class BFS(AStar):  # 广度优先搜索
                     self.PARENT[s_n] = s  # 记录父节点用于回溯
 
                     # bfs, add new node to the end of the openset
-                    prior = self.OPEN[-1][0]+1 if len(self.OPEN)>0 else 0  # 优先级取队尾加一
+                    prior = self.OPEN[-1][0]+1 if len(self.OPEN)>0 else 0  # 优先级取队尾加一，新节点优先级 = 当前最后节点优先级 + 1
                     heapq.heappush(self.OPEN, (prior, s_n))  # 新节点排到队尾，保证先进先出
 
         return self.extract_path(self.PARENT), self.CLOSED  # 返回路径与访问顺序

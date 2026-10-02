@@ -1,8 +1,6 @@
 
 
-# 2D 路径规划算法详解
-
-覆盖 `Search_based_Planning/Search_2D/` 与 `Sampling_based_Planning/rrt_2D/` 下全部 **23 个 2D 算法**，每个算法一段伪代码。
+# 常见路径规划算法
 
 ## 通用符号
 
@@ -20,42 +18,7 @@
 
 伪代码约定：`←` 表示赋值，`=` 表示比较，关键字用英文，行尾 `#` 为注释。
 
-## 目录
-
-- [通用符号](#通用符号)
-- [搜索式规划（13 个）](#搜索式规划13-个)
-  - [1. BFS 广度优先搜索 · `bfs.py`](#1-bfs-广度优先搜索-bfspy)
-  - [2. DFS 深度优先搜索 · `dfs.py`](#2-dfs-深度优先搜索-dfspy)
-  - [3. Best-First 最佳优先搜索 · `Best_First.py`](#3-best-first-最佳优先搜索-best_firstpy)
-  - [4. Dijkstra 算法 · `Dijkstra.py`](#4-dijkstra-算法-dijkstrapy)
-  - [5. A\* 算法 · `Astar.py`](#5-a-算法-astarpy)
-  - [6. 双向 A\* · `Bidirectional_a_star.py`](#6-双向-a-bidirectional_a_starpy)
-  - [7. ARA\* · `ARAstar.py`](#7-ara-arastarpy)
-  - [8. LRTA\* · `LRTAstar.py`](#8-lrta-lrtastarpy)
-  - [9. RTAA\* · `RTAAStar.py`](#9-rtaa-rtaastarpy)
-  - [10. LPA\* · `LPAstar.py`](#10-lpa-lpastarpy)
-  - [11. D\* · `D_star.py`](#11-d-d_starpy)
-  - [12. D\* Lite · `D_star_Lite.py`](#12-d-lite-d_star_litepy)
-  - [13. Anytime D\* · `Anytime_D_star.py`](#13-anytime-d-anytime_d_starpy)
-- [采样式规划（10 个）](#采样式规划10-个)
-  - [14. RRT · `rrt.py`](#14-rrt-rrtpy)
-  - [15. RRT-Connect · `rrt_connect.py`](#15-rrt-connect-rrt_connectpy)
-  - [16. Extended-RRT · `extended_rrt.py`](#16-extended-rrt-extended_rrtpy)
-  - [17. Dynamic-RRT · `dynamic_rrt.py`](#17-dynamic-rrt-dynamic_rrtpy)
-  - [18. RRT\* · `rrt_star.py`](#18-rrt-rrt_starpy)
-  - [19. Informed RRT\* · `informed_rrt_star.py`](#19-informed-rrt-informed_rrt_starpy)
-  - [20. RRT\*-Smart · `rrt_star_smart.py`](#20-rrt-smart-rrt_star_smartpy)
-  - [21. FMT\*（快速行进树） · `fast_marching_trees.py`](#21-fmt快速行进树-fast_marching_treespy)
-  - [22. BIT\*（批处理知情树） · `batch_informed_trees.py`](#22-bit批处理知情树-batch_informed_treespy)
-  - [23. Dubins-RRT\* · `dubins_rrt_star.py`](#23-dubins-rrt-dubins_rrt_starpy)
-- [附录 A：算法对比](#附录-a算法对比)
-  - [搜索式（13 个）](#搜索式13-个)
-  - [采样式（10 个）](#采样式10-个)
-  - [其他事实](#其他事实)
-- [附录 B：运行命令](#附录-b运行命令)
----
-
-## 搜索式规划（13 个）
+## 搜索式规划
 
 ### 1. BFS 广度优先搜索 · `bfs.py`
 
@@ -83,6 +46,8 @@ BFS(s_start, s_goal):
     return 回溯(PARENT), CLOSED
 ```
 
+**概述：首次访问的邻居代价都会初始化为无穷，取起点（访问点）的八领域点，下一步珊格的代价为自身已有代价+到新邻域的欧式距离代价，碰撞代价为无穷，更新邻居点的代价，记录父节点，加入列表队尾。再按顺序弹出最早入队的节点作为访问点，继续八邻域扩散，一直往四周扩散直到遇到终点，回溯路径。**
+
 ### 2. DFS 深度优先搜索 · `dfs.py`
 
 新节点插到队首，后进先出，与 BFS 的逐层扩散相反。
@@ -109,6 +74,8 @@ DFS(s_start, s_goal):
     return 回溯(PARENT), CLOSED
 ```
 
+**概述：bfs是先进先出，所以和波浪一样均匀向外传播，dfs其他都一样，但是是后进先出所以不会像波浪，像一根藤蔓沿着一个方向不断生长，直到扩展到终点，再回溯。**
+
 ### 3. Best-First 最佳优先搜索 · `Best_First.py`
 
 只按启发值排序，不看已走代价，贪心快但不最优。
@@ -133,6 +100,8 @@ BestFirst(s_start, s_goal):
                 OPEN.push((h(s_n), s_n))
     return 回溯(PARENT), CLOSED
 ```
+
+**概述：和dfs和bfs的区别是把优先级改为了启发式，曼哈顿距离或者欧式距离作为代价，代价小的放优先级的前面，先取出扩展，直到终点回溯。**
 
 ### 4. Dijkstra 算法 · `Dijkstra.py`
 
@@ -159,6 +128,8 @@ Dijkstra(s_start, s_goal):
     return 回溯(PARENT), CLOSED
 ```
 
+**概述：和Best-First的区别是Best-First只计算入队点离终点的曼哈顿作为优先代价，Dijkstra按照代价来排优先级，如果每走一步的代价都完全相同，那么 BFS 和 Dijkstra完全相同。**
+
 ### 5. A\* 算法 · `Astar.py`
 
 按 f=g+h 排序，兼顾已走与剩余代价，比 Dijkstra 扩展少。
@@ -183,6 +154,8 @@ AStar(s_start, s_goal):
                 OPEN.push((g[s_n] + h(s_n), s_n))
     return 回溯(PARENT), CLOSED
 ```
+
+**概述：把Dijkstra的代价变为了g+h，往前走一步的代价+曼哈顿/欧式距离启发式代价（g+h），以代价最小进行扩展，直到到终点再回溯。**
 
 ### 6. 双向 A\* · `Bidirectional_a_star.py`
 
@@ -215,6 +188,8 @@ BiAStar(s_start, s_goal):
                 OPEN_back.push((g_back[s_n] + h(s_n, s_start), s_n))
     return 回溯(s_meet, PARENT_fore) + 回溯(s_meet, PARENT_back)   # 起点→相遇点→终点
 ```
+
+**概述：相当于两个A*，一个从起点触发，一个从终点触发，都用对方当启发式目标，若两个列表里有重合的点，代表相遇，然后回溯获得完整路径。**
 
 ### 7. ARA\* · `ARAstar.py`
 
@@ -391,7 +366,7 @@ ComputeOrImprovePath():
             UpdateState(s)                     # 最后重算 s 自身的 rhs
 ```
 
-## 采样式规划（10 个）
+## 采样式规划
 
 ### 14. RRT · `rrt.py`
 
