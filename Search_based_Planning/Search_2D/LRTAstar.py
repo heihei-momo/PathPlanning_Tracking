@@ -82,7 +82,7 @@ class LrtAStarN:
         h_value = {}  # 本轮 CLOSED 节点的 h 值
 
         for s in CLOSED:  # 遍历本轮全部关闭节点
-            h_value[s] = float("inf")  # initialize h_value of CLOSED nodes
+            h_value[s] = float("inf")  # initialize h_value of CLOSED nodes，先把 CLOSED 中所有节点的 h 设成无穷
 
         while True:  # 迭代直到 h 值收敛
             h_value_rec = copy.deepcopy(h_value)  # 备份上一轮 h 值

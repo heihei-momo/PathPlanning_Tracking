@@ -73,7 +73,7 @@ class AraStar:  # ARA* 搜索类
         while True:  # 反复扩展直到本轮收敛
             s, f_small = self.calc_smallest_f()  # 取 OPEN 中 f 最小节点
 
-            if self.f_value(self.s_goal) <= f_small:  # 目标 f 已不大于当前最小值
+            if self.f_value(self.s_goal) <= f_small:  # 目标 f 已不大于当前最小值，当前终点的代价已经不比 OPEN 中任何候选节点差了，所以继续扩展 OPEN 中的节点，已经没有必要在当前 ε 下改进终点
                 break  # 本轮搜索结束
 
             self.OPEN.pop(s)  # 从 OPEN 中移除

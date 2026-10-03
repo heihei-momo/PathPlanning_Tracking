@@ -51,7 +51,7 @@ class RTAAStar:
                 self.path.append(CLOSED)
                 break  # 已到终点，结束
 
-            s_next, h_value = self.cal_h_value(OPEN, CLOSED, g_table, PARENT)  # 用搜索信息更新 h 值
+            s_next, h_value = self.cal_h_value(OPEN, CLOSED, g_table, PARENT)  # 用搜索信息更新 h 值，在open列表中找到一个代价最小的节点
 
             for x in h_value:  # 写回全局 h 表
                 self.h_table[x] = h_value[x]  # 更新节点启发式
