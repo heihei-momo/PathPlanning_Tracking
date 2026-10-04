@@ -19,7 +19,7 @@ class Plotting:  # 局部路径规划的统一绘图器
     def init_figure(self, name="Local Planning"):  # 创建画布并绘制静态环境
         """创建画布并画好静态环境（障碍、参考路径、起终点）"""
         plt.rcParams['figure.raise_window'] = False                     # 禁止窗口抢焦点
-        self.fig, self.ax = plt.subplots(figsize=(11, 6.6))             # 新建画布
+        self.fig, self.ax = plt.subplots(figsize=(12.8, 7.2))           # 新建 16:9 画布
         x0, x1 = self.env.x_range                                       # 场地 x 范围
         y0, y1 = self.env.y_range                                       # 场地 y 范围
         self.ax.set_xlim(x0 - 1.0, x1 + 1.0)                            # 留一点横向边距

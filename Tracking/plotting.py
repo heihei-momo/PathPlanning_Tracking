@@ -22,10 +22,10 @@ class Plotting:  # 路径跟踪的统一绘图器
         """创建双面板画布：左边俯视图，右边横向误差曲线"""
         plt.rcParams['figure.raise_window'] = False              # 禁止窗口抢焦点
         self.fig, (self.ax, self.ax_err) = plt.subplots(         # 一行两列布局
-            1, 2, figsize=(14.5, 6.4),                           # 画布尺寸
+            1, 2, figsize=(12.8, 7.2),                           # 画布 16:9（1280x720）
             gridspec_kw={'width_ratios': [2.2, 1.0]})            # 左宽右窄
-        self.fig.subplots_adjust(left=0.06, right=0.97,          # 调整左右留白
-                                 top=0.92, bottom=0.10, wspace=0.22)   # 调整上下与间距
+        self.fig.subplots_adjust(left=0.07, right=0.97,          # 调整左右留白
+                                 top=0.91, bottom=0.11, wspace=0.24)   # 调整上下与间距
 
         ax = self.ax                                             # 俯视图简写
         x0, x1 = self.env.x_range                                # 场地 x 范围

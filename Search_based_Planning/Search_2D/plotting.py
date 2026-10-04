@@ -7,6 +7,8 @@ import os  # 路径处理
 import sys  # 模块搜索路径
 import matplotlib.pyplot as plt  # 绘图与动画库
 
+plt.rcParams['figure.figsize'] = [12.8, 7.2]  # 画布 16:9（1280x720），适合录屏发 B 站
+
 sys.path.append(os.path.dirname(os.path.abspath(__file__)) +
                 "/../../Search_based_Planning/")  # 把算法根目录加入搜索路径
 

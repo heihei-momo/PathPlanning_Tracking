@@ -5,6 +5,8 @@ Plotting tools for Sampling-based algorithms
 
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
+
+plt.rcParams['figure.figsize'] = [12.8, 7.2]   # 画布 16:9（1280x720），适合录屏发 B 站
 import os
 import sys
 
@@ -33,7 +35,7 @@ class Plotting:  # 绘图工具类
         self.plot_path(path)  # 画最终路径
 
     def plot_grid(self, name):  # 绘制地图、障碍与起终点
-        fig, ax = plt.subplots()  # 创建画布与坐标轴
+        fig, ax = plt.subplots(figsize=(12.8, 7.2))  # 创建 16:9 画布与坐标轴
 
         for (ox, oy, w, h) in self.obs_bound:  # 绘制边界墙
             ax.add_patch(
