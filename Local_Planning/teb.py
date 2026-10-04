@@ -22,6 +22,8 @@ class TEB:
         self.utils = utils                                         # 保存工具对象
         self.n_band = 20                                           # 带子位姿个数
         self.ds_band = 0.9                                         # 相邻位姿名义间距
+        self.frozen = np.zeros(self.n_band, dtype=bool)            # 堆叠点掩码（优化时冻结）
+        self.n_act = self.n_band                                   # 有效点数（接近终点时变少）
         self.d_safe = 1.2                                          # 避障安全距离
         self.v_max = 1.5                                           # 最大线速度
         self.w_max = 1.2                                           # 最大角速度
@@ -52,18 +54,36 @@ class TEB:
         return x, y                                                # 返回该点坐标
 
     def nominal_band(self, state):
-        """沿参考路径等弧长采样出名义带子，末端避开障碍"""
+        """沿参考路径按名义间距采样出名义带子
+        接近终点时路径不够长：若把固定点数等分到越来越短的剩余路径上，带子会被
+        压密、跟踪目标点在密集点上跳变，导致车辆扭动；因此这时保持名义间距、多
+        余的点堆在末端并在优化中冻结。因绕障而回退时仍均匀铺开，以保留足够的自
+        由度让带子绕开障碍。
+        """
         x, y = float(state[0]), float(state[1])                    # 机器人当前位置
         i0, _ = self.utils.nearest_on_path(x, y)                   # 最近路径点下标
         s0 = float(self.s_path[i0])                                # 机器人所在弧长
-        s_end = min(s0 + (self.n_band - 1) * self.ds_band,         # 名义末端弧长
-                    float(self.s_path[-1]))                        # 不超过终点
-        while s_end > s0 + 0.5:                                    # 末端贴障碍就回退
-            ex, ey = self.point_at_arc(s_end)                      # 末端点坐标
+        s_end_path = float(self.s_path[-1])                        # 参考路径末端弧长
+        s_lim = min(s0 + (self.n_band - 1) * self.ds_band,         # 名义末端弧长
+                    s_end_path)                                    # 不超过终点
+        while s_lim > s0 + 0.5:                                    # 末端贴障碍就回退
+            ex, ey = self.point_at_arc(s_lim)                      # 末端点坐标
             if self.utils.obstacle_distance(ex, ey) >= self.d_safe:  # 已满足安全距离
                 break                                              # 停止回退
-            s_end -= 0.3                                           # 弧长后退一小步
-        arcs = np.linspace(s0, s_end, self.n_band)                 # 等弧长采样位置
+            s_lim -= 0.3                                           # 弧长后退一小步
+        s_lim = max(s_lim, s0 + 0.5)                               # 保证带子有最小长度
+        at_goal = s_lim >= s_end_path - 1e-9                       # 是否因接近终点而变短
+        self.frozen = np.zeros(self.n_band, dtype=bool)            # 默认没有堆叠点
+        if at_goal:                                                # 接近终点：保持名义间距
+            arcs = np.minimum(s0 + np.arange(self.n_band) * self.ds_band,   # 按名义间距推进
+                              s_lim)                               # 多余的堆在末端
+            self.frozen = arcs >= s_lim - 1e-9                     # 记录堆叠点供优化器冻结
+        else:                                                      # 绕障回退：均匀铺开
+            arcs = np.linspace(s0, s_lim, self.n_band)             # 保留全部自由度
+        self.frozen[0] = False                                     # 首点本就锁定，无需冻结
+        self.frozen[-1] = False                                    # 末点本就锁定，无需冻结
+        self.n_act = int(np.searchsorted(arcs, s_lim - 1e-9)) + 1  # 有效点数（含末端那一点）
+        self.n_act = min(max(self.n_act, 2), self.n_band)          # 限制在合法范围内
         bx = np.interp(arcs, self.s_path, self.px)                 # 采样点横坐标
         by = np.interp(arcs, self.s_path, self.py)                 # 采样点纵坐标
         band = np.column_stack([bx, by])                           # 拼成名义带子
@@ -133,6 +153,15 @@ class TEB:
         hi = np.r_[np.full(nf, self.env.x_range[1]),               # 横坐标上界
                    np.full(nf, self.env.y_range[1]),               # 纵坐标上界
                    np.full(nf + 1, 1.0)]                           # 时间上界
+        eps = 1e-6                                                 # 冻结点的极窄半宽
+        for j, i in enumerate(range(1, self.n_band - 1)):          # 遍历所有自由位姿
+            if self.frozen[i]:                                     # 该点已堆在带子末端
+                z0[j] = p_goal[0]                                  # 初值也放到末端横坐标
+                z0[nf + j] = p_goal[1]                             # 初值也放到末端纵坐标
+                lo[j] = p_goal[0] - eps                            # 下界贴近末端（不能用等号）
+                hi[j] = p_goal[0] + eps                            # 上界贴近末端（避免除零）
+                lo[nf + j] = p_goal[1] - eps                       # 同理冻结纵坐标下界
+                hi[nf + j] = p_goal[1] + eps                       # 同理冻结纵坐标上界
         res = minimize(self.band_cost, z0, args=(p_start, p_goal), # 调用 SLSQP 求解
                        method='SLSQP', bounds=list(zip(lo, hi)),   # 指定求解器与边界
                        options={'maxiter': maxiter or self.maxiter,   # 迭代次数上限
@@ -186,7 +215,7 @@ class TEB:
             j = i + shift                                          # 对应旧段下标
             if j < self.n_band - 1:                                # 旧段仍在带内
                 new_dts[i] = dts[j]                                # 继承旧时间
-        new_band[0] = (state[0], state[1])                         # 首点锁定机器人
+        new_band[0] = (state[0], state[1])                         # 首点锁定为机器人当前位置
         new_band[-1] = nominal[-1]                                 # 末点用名义终点
         return new_band, new_dts                                   # 返回热启动带子
 
@@ -213,6 +242,7 @@ class TEB:
 
     def draw(self, plot, band, traj, state, steps, v):
         """刷新一帧动画：弹性带、实际轨迹、机器人"""
+        band = band[:self.n_act]                                   # 只画有效点，末端不堆点
         plot.clear()                                               # 清除上一帧
         plot.draw_line(band[:, 0], band[:, 1], color='tab:orange',  # 画出弹性带折线
                        lw=1.5, ls='--', alpha=0.75)                # 虚线半透明

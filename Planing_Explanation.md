@@ -634,6 +634,202 @@ DubinsRRTStar(s_start, s_goal, iter_max):
 **流程与rrt_star完全一样，除了优化近邻父节点的时候只用Dubins检测了碰撞，代价更新用的是直线距离（复用rrt_star了），其他把直线连接的地方全换Dubins曲线就是Dubins-RRT_star**
 
 
+## 局部路径规划
+
+### DWA 动态窗口法 · `Local_Planning/dwa.py`
+
+在加速度窗口内采样速度，五项加权打分后逐步滚动。
+
+```text
+DWA_run(start, goal):
+    state ← start, v ← 0.0, w ← 0.0
+    for step ∈ [0, max_steps):
+        rem_now ← path_remaining(state[0], state[1]), cands ← ∅
+        v_lo, v_hi, w_lo, w_hi ← dynamic_window(v, w)          # 受加速度限制的动态窗口
+        for (cv, cw) ∈ arange(v_lo, v_hi, v_reso) × arange(w_lo, w_hi, w_reso):
+            traj ← simulate(state, cv, cw, dt, predict_time / dt)
+            if not is_trajectory_collision(traj, clear_margin):
+                cands ← cands ∪ {(evaluate(traj, cv, rem_now), cv, cw, traj)}
+        if cands = ∅: v, w ← 0.0, 0.0                          # 窗口内全撞障就停车
+        else: (_, v, w, traj) ← max(cands)
+        state ← motion(state, v, w, dt)
+        if dist(state, goal) < goal_tol: return True
+    return False
+
+evaluate(traj, v, rem_now):                                    # 五项加权打分
+    end ← traj[-1], look ← safe_lookahead(end[0], end[1], lookahead)
+    heading ← (π - |angle_diff(atan2(look[1] - end[1], look[0] - end[0]), end[2])|) / π
+    clear ← clip(min(obstacle_distance(p[0], p[1]) for p ∈ traj) / clear_thresh, 0, 1)
+    prog ← (rem_now - path_remaining(end[0], end[1])) / (v_max·predict_time)   # 未归一化，可为负
+    return (w_heading·heading + w_clear·clear + w_vel·max(0, v)/v_max
+            + w_path/(1 + nearest_on_path(end[0], end[1])[1]) + w_prog·prog)
+
+safe_lookahead(x, y, base):                                    # 沿参考路径外扩找安全前瞻点
+    d ← base, p ← path_lookahead(x, y, d)
+    for _ ∈ [0, lookahead_try):
+        if obstacle_distance(p[0], p[1]) > lookahead_margin: return p
+        d ← d + lookahead_step, p ← path_lookahead(x, y, d)
+    return p
+```
+
+概述：先根据当前状态和运动学约束计算线速度、角速度的动态采样窗口，再离散采样得到候选速度组合；根据已有全局路径确定一个避障的安全前瞻目标，遍历所有候选线速度和角速度并进行轨迹积分，得到多条预测轨迹；先剔除碰撞轨迹，再从车头朝向、离障碍物远近、速度快慢、路径贴合程度以及向终点前进程度五个方面对安全轨迹进行加权评分，最终选取得分最高的候选轨迹及其控制量作为本次局部规划结果，每走一步就规划一次。
+
+### TEB 时间弹性带 · `Local_Planning/teb.py`
+
+位姿与时间构成弹性带，SLSQP 滚动重优化后纯跟踪执行。
+
+```text
+TEB_plan(start, goal):
+    state ← start, band ← nominal_band(state), dts ← init_dts(band)
+    for step ∈ [0, max_steps):
+        if step % reopt_k = 0:                                 # 到重优化周期
+            warm_band, warm_dts ← shift_band(band, dts, state)  # 丢走过点、末尾补新点并热启动
+            it ← maxiter if step = 0 else maxiter_fast          # 首次 22 次，滚动 6 次
+            band, dts ← optimize(state, warm_band, warm_dts, it)
+        v, w ← tracking_control(state, band)                   # 纯跟踪沿带子走
+        v ← brake(state, v, w)                                 # 碰撞前减速兜底
+        state ← motion(state, v, w, dt_sim)
+        if dist(state, goal) < 1.0: return True
+    return False
+
+optimize(state, warm_band, warm_dts, maxiter):
+    z0 ← [warm_band[1:-1] 展平, clip(warm_dts, 0.05, 1.0)]     # 中间位姿与时间间隔热启动
+    z ← SLSQP(band_cost, z0, args=(state[:2], warm_band[-1]), bounds=(区域界, 0.05~1.0), maxiter)
+    return 由 z 还原 band（首尾固定）, clip(z 的时间间隔, 0.05, 1.0)
+
+band_cost(z, p_start, p_goal):
+    band ← [p_start, z 的中间点, p_goal]                       # 起点终点固定，中间点自由
+    dts ← z 的时间间隔
+    return w_path·Σ d_path² + w_obs·Σ max(0, d_safe - d_all)² + w_smooth·Σ ‖Δ²band‖²
+           + w_time·Σ dts + w_vel·Σ max(0, seg/dts - v_max)² + w_omega·Σ max(0, |Δθ|/dt_mid - w_max)²
+```
+
+**概述：以机器人当前所在的参考路径位置为起点，沿全局/参考路径向前截取一小段，并等弧长采样成 m个点，作为后续局部规划的“名义轨迹/名义带子”，如果末端太靠近障碍物，就把末端往回缩。开启周期性优化，先生成一条带，然后继承旧带部分覆盖新带。随后进行轨迹优化，SLSQP 把弹性带的中间点坐标 `x/y` 和每段时间 `dts` 当成优化变量，每次改变它们后通过 `band_cost()`计算“路径、避障、平滑、时间、速度、角速度”六项代价，并不断调整这些变量，让总代价尽可能小。**
+
+### MPC 模型预测控制（局部规划） · `Local_Planning/mpc.py`
+
+自行车模型下滚动优化 N 步控制序列，只执行第一步。
+
+```text
+MPC_run(start, goal):
+    state ← start, z ← initial_guess(), prev ← (0.0, 0.0)
+    for step ∈ [0, max_steps):
+        ref, s_tgt ← build_reference(state[0], state[1])       # 时域参考位姿与目标弧长
+        z ← solve(state, ref, z, s_tgt)                        # SLSQP 解 N 步 (v, w) 序列
+        v, w ← z[0], z[N]                                      # 只施加第一步
+        z ← warm_start(z)                                      # 解序列左移作下周期初值
+        state ← motion(state, v, w, dt)
+        prev ← (v, w)
+        if dist(state, goal) < goal_tol: return True
+    return False
+
+solve(state, ref, z0, s_tgt):
+    z ← SLSQP(rollout_cost, z0, args=(state, ref, prev, s_tgt), bounds=(0≤v≤v_max, -w_max≤w≤w_max)×N, maxiter)
+    z ← z0 if z 中存在非有限值
+    return clip(z, bounds)
+
+rollout_cost(z, state, ref, prev, s_tgt):
+    vs, ws ← z[:N], z[N:]
+    cost ← 0.0, st ← state
+    for k ∈ [0, N):
+        st ← motion(st, vs[k], ws[k], dt)                      # 单车模型积分一步
+        cost += w_xy·‖st[:2] - ref[k][:2]‖² + w_theta·angle_diff(st[2], ref[k, 2])²
+        cost += w_obs·max(0, d_safe - obstacle_distance(st[0], st[1]))²
+    cost += w_prog·(s_tgt - path_s[最近点])²                   # 纵向进度项，缺了会卡在障碍前
+    cost += w_term·‖末端位置误差‖² + w_v·Σ vs² + w_w·Σ ws²
+    cost += w_dv·Σ Δvs² + w_dw·Σ Δws²                          # 控制增量平滑
+    return cost
+```
+
+**概述：找到机器人在全局路径上的位置，沿着路径向前取一段参考点，把优化器给出的未来n步速度 `v` 和角速度 `w` 依次代入车辆运动模型进行前向推演，得到整条预测轨迹，然后逐步计算预测位置与参考位置的跟踪误差、航向误差和障碍物距离，并在预测结束后加入终点误差和路径前进进度误差，同时对速度、角速度的大小以及它们的变化幅度进行惩罚，最后把这些代价全部加起来形成一个总代价 `cost` 返回给 SLSQP，SLSQP 再不断调整这 30 个控制变量，使这个总代价尽可能小。**
+
+## 轨迹跟踪
+
+### Pure Pursuit 纯跟踪 · `Tracking/pure_pursuit.py`
+
+沿参考轨迹取前视点，几何法直接解出前轮转角。
+
+```text
+PurePursuit(state, Ld):
+    x, y, theta ← state
+    px, py ← lookahead_point(x, y, Ld)             # 沿轨迹前视 Ld
+    bearing ← atan2(py - y, px - x)
+    alpha ← normalize_angle(bearing - theta)
+    delta ← atan2(2·L·sin(alpha), Ld)
+    delta ← clip(delta, -delta_max, delta_max)
+    return delta, px, py
+
+跟踪主循环(state):
+    for step ← 1 to max_steps:
+        delta, _, _ ← PurePursuit(state, Ld)
+        state ← bicycle_step(state, v, delta, L, dt)    # 匀速前进
+        if path_remaining(state) < 2.0: break
+    return state
+```
+
+**概述：沿轨迹向前取前视点，计算车辆位姿与前视点的方位角偏差，根据纯跟踪转角公式，根据自行车模型向前行进一步，然后循环持续跟踪。**
+
+### LQR 线性二次型调节器 · `Tracking/lqr.py`
+
+误差模型线性化，离线解一次黎卡提方程得固定增益。
+
+```text
+LQR_初始化(L, v, Q, R):
+    A ← [[0, v], [0, 0]]
+    B ← [[0], [v / L]]
+    P ← solve_continuous_are(A, B, Q, R)           # 黎卡提方程，只需算一次
+    K ← R⁻¹·Bᵀ·P
+    return K
+
+LQR_控制(state, K):
+    e_y, e_theta, i ← lateral_error(state)
+    delta_ff ← atan(L · path[i, 3])                # 曲率前馈
+    delta ← delta_ff − K·[e_y, e_theta]
+    return clip(delta, −delta_max, delta_max)
+
+跟踪主循环(state, K):
+    for step ← 1 to max_steps:
+        delta ← LQR_控制(state, K)
+        state ← bicycle_step(state, v, delta, L, dt)
+        if path_remaining(state) < goal_tol: break
+    return state
+```
+
+**概述：取出当前车辆状态，并找到参考路径上的最近点，计算车辆相对于参考路径的横向误差和航向误差，再获取参考点的曲率，根据参考曲率计算前馈转角。同时将横向误差和航向误差组成误差状态向量，通过车辆误差模型得到状态矩阵 A、控制矩阵 B，并根据对状态误差的惩罚 Q 和对控制输入的惩罚 R，求解代数黎卡提方程得到 P，再计算 LQR 反馈增益 K。将误差状态与 K 相乘得到反馈修正量，最终将前馈转角减去反馈修正量得到车辆的转向角，并通过车辆运动模型向前运动一步，循环执行上述过程，实现车辆的横向路径跟踪。**
+
+### MPC 模型预测控制（轨迹跟踪） · `Tracking/mpc.py`
+
+未来 N 步的误差预测上做带约束二次规划，只执行第一步。
+
+```text
+MPC_初始化(N, L, v, Q, R, Rd, dt):
+    Ad ← I + [[0, v], [0, 0]]·dt
+    Bd ← [0, v / L]·dt
+    P ← solve_continuous_are(A, B, Q, R)           # 终端代价，与 LQR 同源
+    预计算 M, K：X ← M·x0 + K·U                    # 未来 N 步误差状态映射
+    H ← Kᵀ·G·K + R·I + Rd·Dᵀ·D
+    u_last ← 0, U ← 0
+    return M, K, H
+
+MPC_求解(x0, u_last, U):
+    f ← Kᵀ·G·M·x0 − Rd·u_last·e0
+    # J = Σ_{k=1}^{N−1} x_kᵀQ x_k + x_NᵀP x_N + R·Σu_k² + Rd·Σ(u_k − u_{k−1})²，u_{−1} = u_last
+    U ← SLSQP(argmin Uᵀ·H·U + 2fᵀ·U, 梯度 2(H·U + f))   # 解析梯度，约 0.6 ms
+    s.t. −delta_max ≤ U ≤ delta_max                     # 转角约束化为 bounds
+    u_last ← U[0], U ← [U[1], …, U[N−1], U[N−1]]        # 左移一位热启动
+    return U[0], u_last, U
+
+MPC_控制(state):
+    e_y, e_theta, i ← lateral_error(state)
+    delta_ff ← atan(L · path[i, 3])
+    u0, u_last, U ← MPC_求解([e_y, e_theta], u_last, U)
+    delta ← clip(delta_ff + u0, −delta_max, delta_max)   # 只施加第一步
+    rollout(state, delta_ff, U)                          # 下一周期重新优化
+    return delta
+```
+
+**概述：先构造离散车辆误差模型代价，后面只需要计算f，剩下变量U，就可以用SLSQP快速求最优控制序列，也就是未来序列的转角修正量。取出当前车辆状态，并找到参考路径上的最近点，计算车辆相对于参考路径的横向误差和航向误差，再获取参考点的曲率，根据参考曲率计算前馈转角。根据当前误差 x0和上一时刻控制量，计算当前 MPC 二次代价函数中的线性项系数 f，即可快速算出总代价（跟踪误差代价、控制量代价-修正量不能太大、控制变化代价、终端代价），然后用 SLSQP找到最小代价的控制序列U。U是未来的n个时刻的转角修正量。LQR直接根据当前误差计算一个控制量，而MPC会预测未来一段时间，并优化一整串控制量。拿已经优化出来的未来控制序列 U，通过运动学模型，把车辆未来 N 步可能走出的轨迹推演出来，每走一步就重新向前预测**
+
 ## 附录 A：算法对比
 
 ### 搜索式
@@ -669,6 +865,24 @@ DubinsRRTStar(s_start, s_goal, iter_max):
 
 > **渐近最优**：采样越多越接近最优，但有限时间内不保证最优。
 
+### 局部路径规划
+
+| # | 算法 | 范式 | 能避障 | 一句话 |
+|---|---|---|---|---|
+| 1 | DWA | 采样 + 打分 | ✅ | 在动态窗口内采样速度，按五项打分选最优 |
+| 2 | TEB | 优化（弹性带） | ✅ | 把轨迹当橡皮筋，用 SLSQP 拉直又躲开障碍 |
+| 3 | MPC（局部规划） | 优化（滚动时域） | ✅ | 每个周期解一次带避障罚项的有限时域优化 |
+
+### 轨迹跟踪
+
+| # | 算法 | 范式 | 最大横向误差 | 单次求解 | 一句话 |
+|---|---|---|---|---|---|
+| 1 | Pure Pursuit | 几何法 | 0.093 m | — | 盯着前方一个点打方向 |
+| 2 | LQR | 最优反馈 | **0.014 m** | 离线算一次 | 用 Riccati 增益做误差反馈 |
+| 3 | MPC（轨迹跟踪） | 预测控制 | 0.019 m | 0.6 ms | 每个周期解一次有限时域优化 |
+
+> 轨迹跟踪的误差是本文档参考轨迹（正弦路、车速 5 m/s）下的实测值。LQR 精度最高是因为无限时域 Riccati 增益本身就是无约束最优；MPC 多了一项转角增量平滑惩罚（打方向更柔和），代价是精度损失一点点——但只有 MPC 能显式处理转角速率、执行器饱和、避障这类**约束**。
+
 ## 附录 B：运行命令
 
 在项目根目录执行，弹窗后按 `Esc` 关闭。
@@ -686,3 +900,21 @@ python3 -m Sampling_based_Planning.rrt_2D.rrt_star        # 换成任意文件�
 ```
 
 等价写法：`PYTHONPATH=. python3 Sampling_based_Planning/rrt_2D/rrt_star.py`
+
+**局部路径规划**（直接跑脚本）：
+
+```bash
+python3 Local_Planning/dwa.py
+python3 Local_Planning/teb.py
+python3 Local_Planning/mpc.py
+```
+
+**轨迹跟踪**（直接跑脚本）：
+
+```bash
+python3 tracking/pure_pursuit.py
+python3 tracking/lqr.py
+python3 tracking/mpc.py
+```
+
+> 局部路径规划和轨迹跟踪这两类脚本，跑完会**保持窗口不退出**（机器人停在终点），按 `Ctrl+C` 关闭；也可以把焦点切到图形窗口按 `Esc` 或 `Ctrl+C`。终端里按 `Ctrl+C` 随时可以中断，退出码为 0。
